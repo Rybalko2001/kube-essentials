@@ -1,2 +1,40 @@
 # apiVersion: batch/v1
 # kind: CronJob
+apiVersion: batch/v1                              # Ми працюємо з CronJob, що є частиною API batch
+kind: CronJob                                     # Тип ресурсу — планувальник періодичних Job-ів
+metadata:                                         # Ім’я CronJob та простір імен — dev
+  name: postgres-backup
+  namespace: dev
+spec:
+  schedule: "0 0 * * *"                           # Cron-вираз: запускатиме задачу щодня опівночі (00:00)
+  jobTemplate:                                    # Кожного дня CronJob створює Job, яка має такі метадані/лейбли
+    spec:
+      template:
+        metadata:
+          labels:
+            job: postgres-backup
+        spec:
+          nodeSelector:
+            kubernetes.io/hostname: node-basic    # Цей Job обов’язково буде запущений на вузлі з hostname node-basic
+          containers:
+            - name: backup
+              image: postgres:17.0                # Образ офіційного PostgreSQL 17.0, який містить pg_dump
+              envFrom:
+                - secretRef:
+                    name: backend-secrets         #  Всі змінні середовища (наприклад, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_SERVER) беруться з секрету backend-secrets
+              volumeMounts:
+                - name: backup-volume
+                  mountPath: /backups             # Монтований PVC буде доступний у контейнері за шляхом /backups
+              command:                            # shell-команда, яка виконується у контейнері
+              - /bin/bash
+              - -c
+              - |
+                export TIMESTAMP=$(date +"%Y%m%d%H%M%S") && \
+                export PGPASSWORD=$POSTGRES_PASSWORD && \
+                pg_dump -h $POSTGRES_SERVER -U $POSTGRES_USER -f /backups/backup-$TIMESTAMP.sql && \
+                find /backups -type f -name "backup-*.sql" -mtime +30 -delete
+          restartPolicy: OnFailure                # Якщо Job не вдається — його спробують перезапустити
+          volumes:                                # Підключення PVC з попереднього файлу (pvc.yaml) до контейнера
+            - name: backup-volume
+              persistentVolumeClaim:
+                claimName: postgres-backup

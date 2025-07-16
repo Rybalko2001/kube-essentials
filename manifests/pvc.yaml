@@ -1,2 +1,14 @@
 # apiVersion: v1
 # kind: PersistentVolumeClaim
+apiVersion: v1                  # Bерсія API Kubernetes
+kind: PersistentVolumeClaim     # Тип ресурсу — запит на постійне зберігання даних
+metadata:
+  name: postgres-backup         # Ім’я PVC — postgres-backup
+  namespace: dev                # Namespace — dev, тому PVC буде створено саме там
+spec:
+  accessModes:
+    - ReadWriteOnce             # Дозволяє монтувати том тільки на одному поді одночасно для читання/запису. Це типовий режим для PostgreSQL
+  resources:
+    requests:
+      storage: 0.5Gi            # Ми запитуємо 0.5 Гігабайта дискового простору
+  storageClassName: standard    # Зазначено storage class. standard — це клас збереження, який визначає, як і де саме фізично буде створено том (наприклад, локально або в хмарі)

@@ -1,2 +1,59 @@
 # apiVersion: apps/v1
 # kind: Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      # 💡 Бажано запускати на fast-node або basic-node
+      affinity:                       # Affinity — дозволяє Kubernetes розмістити Pod на fast-node або basic-node
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:  # Це не примусово, а перевага (preferred).
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:           # Якщо на цих вузлах немає місця — Kubernetes може розмістити Pod деінде (але ми обмежили тільки цими двома).
+                      - fast-node
+                      - basic-node
+
+      containers:
+        - name: frontend
+          image: frontend:0.7.1
+          ports:
+            - containerPort: 80       # Образ фронтенду, слухає порт 80.
+
+          # 📊 Обмеження ресурсів
+          resources:                  # Менші ресурси, бо frontend зазвичай легший:
+            requests:
+              cpu: "75m"
+              memory: "128Mi"
+            limits:
+              cpu: "150m"
+              memory: "256Mi"
+
+          livenessProbe:
+            httpGet:                        # URL, за яким Kubernetes перевіряє стан
+              path: /
+              port: 80                      # На якому порту відбувається перевірка
+            initialDelaySeconds: 15         # Затримка перед першою перевіркою після запуску
+            periodSeconds: 20               # Інтервал між перевірками
+
+          readinessProbe:
+            httpGet:                        # URL, за яким Kubernetes перевіряє стан
+              path: /
+              port: 80                      # На якому порту відбувається перевірка
+            initialDelaySeconds: 7          # Затримка перед першою перевіркою після запуску
+            periodSeconds: 10               # Інтервал між перевірками

@@ -1,44 +1,70 @@
 # apiVersion: apps/v1
 # kind: Deployment
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: backend
+apiVersion: apps/v1 # Визначає API-версію Kubernetes
+kind: Deployment    # Тип ресурсу — Deployment керує створенням і оновленням Pod-ів
+metadata:           
+  name: backend     # Ім’я деплойменту
   labels:
-    app: backend
+    app: backend    # Ключова мітка для ідентифікації (використовується в selector-ах, сервісах тощо)
 spec:
-  replicas: 1
+  replicas: 1       # Кількість копій (Pod-ів), які потрібно підтримувати в живому стані
   selector:
     matchLabels:
-      app: backend
+      app: backend  # Вказує, до яких Pod-ів належить цей Deployment (шукає Pod-и з міткою app=backend)
   template:
     metadata:
       labels:
-        app: backend
+        app: backend # Шаблон для створення Pod-ів. Всі Pod-и будуть з міткою app=backend
     spec:
-      initContainers:
-        - name: wait-for-postgres
+      
+      nodeSelector:
+        kubernetes.io/hostname: node-fast # Обмеження вузла: Pod може запускатись тільки на вузлі з hostname fast-node. Гарантує розміщення на потрібному вузлі.
+
+      initContainers: 
+        - name: wait-for-postgres         # Init-контейнер, який чекає, поки PostgreSQL буде доступна, перш ніж запускати backend.
           image: cgr.dev/chainguard/wait-for-it
           args:
             - "postgres-postgresql.postgres.svc.cluster.local:5432"
-            - "--timeout=60"
-            - "--strict"
-        
-        - name: db-migrate
+            - "--timeout=60"              #--timeout=60 — чекає до 60 секунд.
+            - "--strict"                  #--strict — якщо БД недоступна — контейнер впаде.
+
+        - name: db-migrate                # Другий init-контейнер — виконує підготовку бази даних:
           image: backend:0.7.1
           command: ["/bin/sh", "-c"]
           args:
             - python app/backend_pre_start.py && alembic upgrade head && python app/initial_data.py
           envFrom:
             - secretRef:
-                name: backend-secrets
-      
-      containers:
-        - name: backend
-          image: backend:0.7.1
-          ports:
-            - containerPort: 8000
+                name: backend-secrets   # Секрети для доступу до БД беруться з backend-secrets
 
+      containers:
+        - name: backend                 # Назва для основного додатку.
+          image: backend:0.7.1          # Docker-образ для основного додатку
+          ports:
+            - containerPort: 8000       # Контейнер слухає порт 8000 (FastAPI або подібне)
           envFrom:
             - secretRef:
-                name: backend-secrets
+                name: backend-secrets   # Завантаження змінних середовища (наприклад, паролі, URI БД) з Kubernetes Secret
+
+                # 📊 Обмеження ресурсів
+          resources:                    
+            requests:                   # requests: 100m CPU (0.1 ядра), 256МБ — гарантовано виділяються
+              cpu: "100m"
+              memory: "256Mi"
+            limits:                     # limits: не більше ніж 500m CPU та 1ГБ RAM
+              cpu: "500m"
+              memory: "1Gi"
+
+          livenessProbe:
+            httpGet:                          # URL, за яким Kubernetes перевіряє стан
+              path: /api/v1/utils/health-check/
+              port: 8000                      # На якому порту відбувається перевірка
+            initialDelaySeconds: 15           # Затримка перед першою перевіркою після запуску
+            periodSeconds: 20                 # Інтервал між перевірками
+
+          readinessProbe:
+            httpGet:                          # URL, за яким Kubernetes перевіряє стан
+              path: /api/v1/utils/health-check/
+              port: 8000                      # На якому порту відбувається перевірка
+            initialDelaySeconds: 15           # Затримка перед першою перевіркою після запуску
+            periodSeconds: 10                 # Інтервал між перевірками
